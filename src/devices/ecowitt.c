@@ -25,33 +25,48 @@ Ecowitt Wireless Outdoor Thermometer WH53/WH0280/WH0281A.
 */
 
 #include "decoder.h"
+#include "logger.h"
 
 static int ecowitt_decode(r_device *decoder, bitbuffer_t *bitbuffer)
 {
     // All Ecowitt packets have one row.
     if (bitbuffer->num_rows != 1) {
+        print_logf(LOG_WARNING, __func__, "wrong number of rows %d", bitbuffer->num_rows);
         return DECODE_ABORT_LENGTH;
     }
 
-    // All Ecowitt packets have 55 bits.
-    if (bitbuffer->bits_per_row[0] != 55) {
+    uint8_t skip_bits = 0;
+
+    // All Ecowitt packets have 55 bits. TODO
+    if (bitbuffer->bits_per_row[0] == 54) {
+        skip_bits = 6;
+    }
+    else if (bitbuffer->bits_per_row[0] == 55) {
+        skip_bits = 7;
+    }
+    else {
+        print_logf(LOG_WARNING, __func__, "wrong number of bits %d", bitbuffer->bits_per_row[0]);
         return DECODE_ABORT_LENGTH;
     }
 
     uint8_t *row = bitbuffer->bb[0];
 
-    // All Ecowitt packets have the first 7 bits set.
-    uint8_t first7bits = row[0] >> 1;
-    if (first7bits != 0x7F) {
+    // All Ecowitt packets have the first 7 bits set. TODO
+    uint8_t first_bits = row[0] >> (8 - skip_bits);
+    print_logf(LOG_WARNING, __func__, "first bits 0x%02x", first_bits);
+/*
+    if (first7bits != 0x1F) {
         return DECODE_ABORT_EARLY;
     }
+*/
 
     // Byte-align the rest of the message by skipping the first 7 bits.
     uint8_t b[6];
-    bitbuffer_extract_bytes(bitbuffer, /* row= */ 0, /* pos= */ 7, b, sizeof(b) * 8); // Skip first 7 bits
+    bitbuffer_extract_bytes(bitbuffer, /* row= */ 0, /* pos= */ skip_bits, b, sizeof(b) * 8); // Skip first 6 bits
 
     // All Ecowitt packets continue with a fixed header
     if (b[0] != 0x53) {
+        print_logf(LOG_WARNING, __func__, "wrong header 0x%02x", b[0]);
         return DECODE_ABORT_EARLY;
     }
 
@@ -61,6 +76,7 @@ static int ecowitt_decode(r_device *decoder, bitbuffer_t *bitbuffer)
     int channel = b[2] >> 4; // First nybble.
     channel++; // Convert 0-indexed wire protocol to 1-indexed channels on the device UI
     if (channel > 3) {
+        print_logf(LOG_WARNING, __func__, "invalid channel ID %d", channel);
         return DECODE_FAIL_SANITY; // The switch only has 1-3.
     }
 
@@ -69,6 +85,7 @@ static int ecowitt_decode(r_device *decoder, bitbuffer_t *bitbuffer)
     // The manual though says it only operates to 60C, which about matches 10 bits (1023/10-40C)=62.3C
     // Above 60 is pretty hot - let's just check these are always zero.
     if ((b[2] & (4 | 8)) != 0) {
+        print_logf(LOG_WARNING, __func__, "bits not zero");
         return DECODE_ABORT_EARLY;
     }
 
@@ -78,6 +95,7 @@ static int ecowitt_decode(r_device *decoder, bitbuffer_t *bitbuffer)
 
     // All Ecowitt observed packets have bits 39-48 set.
     if (b[4] != 0xFF) {
+        print_logf(LOG_WARNING, __func__, "bits not one");
         return DECODE_ABORT_EARLY;
     }
 
@@ -89,6 +107,7 @@ static int ecowitt_decode(r_device *decoder, bitbuffer_t *bitbuffer)
             /* polynomial= */ 0x31,
             /* init= */ 0);
     if (wire_crc != computed_crc) {
+        print_logf(LOG_WARNING, __func__, "CRC check failed");
         return DECODE_FAIL_MIC;
     }
 
