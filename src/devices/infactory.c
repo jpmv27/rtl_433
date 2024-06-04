@@ -22,11 +22,11 @@ Known brand names: inFactory, nor-tec, GreenBlue, DAY. Manufacturer in China.
 Transmissions includes an id. Every 60 seconds the sensor transmits 6 packets:
 
     0000 1111 | 0011 0000 | 0101 1100 | 1110 0111 | 0110 0001
-    iiii iiii | cccc ub?? | tttt tttt | tttt hhhh | hhhh ??nn
+    iiii iiii | cccc xb?? | tttt tttt | tttt hhhh | hhhh ??nn
 
 - i: identification // changes on battery switch
 - c: CRC-4 // CCITT checksum, see below for computation specifics
-- u: unknown // (sometimes set at power-on, but not always)
+- x: TX button // flag to indicate transmission forced by TX button
 - b: battery low // flag to indicate low battery voltage
 - h: Humidity // BCD-encoded, each nibble is one digit, 'A0' means 100%rH
 - t: Temperature // in °F as binary number with one decimal place + 90 °F offset
@@ -76,6 +76,7 @@ static int infactory_callback(r_device *decoder, bitbuffer_t *bitbuffer)
 
     int id          = b[0];
     int battery_low = (b[1] >> 2) & 1;
+    int button      = (b[1] >> 3) & 1;
     int temp_raw    = (b[2] << 4) | (b[3] >> 4);
     int humidity    = (b[3] & 0x0F) * 10 + (b[4] >> 4); // BCD, 'A0'=100%rH
     int channel     = b[4] & 0x03;
@@ -86,6 +87,7 @@ static int infactory_callback(r_device *decoder, bitbuffer_t *bitbuffer)
     data_t *data = data_make(
             "model",            "",             DATA_STRING, "inFactory-TH",
             "id",               "ID",           DATA_INT,    id,
+            "button",           "Button",       DATA_INT,    button,
             "channel",          "Channel",      DATA_INT,    channel,
             "battery_ok",       "Battery",      DATA_INT,    !battery_low,
             "temperature_F",    "Temperature",  DATA_FORMAT, "%.2f F", DATA_DOUBLE, temp_f,
@@ -101,6 +103,7 @@ static int infactory_callback(r_device *decoder, bitbuffer_t *bitbuffer)
 static char const *const output_fields[] = {
         "model",
         "id",
+        "button",
         "channel",
         "battery_ok",
         "temperature_F",
